@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import { ICON_BOUNDS, MARK_POLYS } from "../brand/clario-mark";
+import { LITE_CANVAS_SCALE } from "../banner.config";
 import { getLayout, type Rect } from "../geometry";
 import { getCopy } from "../i18n/copy";
 import { clamp01, easeInOut, easeOut, lerp, ramp, smooth } from "../kit/anim";
@@ -21,7 +22,10 @@ import { Sweep, sweepAt } from "../kit/Sweep";
 import { CtaButton, Headline } from "../kit/text";
 import { hexToRgb, getTheme, type Theme } from "../theme";
 
-export const FRAMES = 360;
+// 16 секунд при 30 fps: заголовок и кнопка держатся около 4,5 с до белого затухания
+export const FRAMES = 480;
+/** Кадр, с которого начинается белое затухание в конце цикла. */
+const WHITE_OUT_FROM = 450;
 // Один проход скана: после него всё фото состоит из точек
 const SCAN: ScanTimes = { in: [66, 132], out: [10000, 10001] };
 const MORPH = [150, 238] as const;
@@ -39,21 +43,40 @@ type Particle = {
   delay: number;
 };
 
-/** Точка внутри контура знака по правилу чётности: внешний контур и два отверстия. */
-function insideIcon(x: number, y: number): boolean {
-  let hits = 0;
-  for (const name of ["icon", "iconHoleRight", "iconHoleLeft"] as const) {
-    const poly = MARK_POLYS[name];
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i];
-      const [xj, yj] = poly[j];
-      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
-        inside = !inside;
+/**
+ * Узлы сетки внутри знака по правилу чётности: внешний контур и два отверстия.
+ * Строка за строкой считаем пересечения рёбер с горизонталью и заполняем промежутки между ними.
+ * Это в десятки раз быстрее, чем проверять каждую точку против каждого ребра, а разовая
+ * задача на главном потоке не должна быть длинной (она попадала в TBT).
+ */
+export function iconTargets(step: number): [number, number][] {
+  const b = ICON_BOUNDS;
+  const polys = (["icon", "iconHoleRight", "iconHoleLeft"] as const).map(
+    (name) => MARK_POLYS[name],
+  );
+  const x0 = b.x0 + step / 2;
+  const out: [number, number][] = [];
+  const rows = Math.ceil((b.y1 - b.y0 - step / 2) / step);
+  for (let r = 0; r < rows; r++) {
+    const y = b.y0 + step / 2 + r * step;
+    const xs: number[] = [];
+    for (const poly of polys) {
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i];
+        const [xj, yj] = poly[j];
+        if (yi > y !== yj > y) xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi);
+      }
     }
-    if (inside) hits++;
+    xs.sort((m, n) => m - n);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      for (let n = Math.max(0, Math.ceil((xs[k] - x0) / step)); ; n++) {
+        const x = x0 + n * step;
+        if (x >= xs[k + 1] || x >= b.x1) break;
+        out.push([x, y]);
+      }
+    }
   }
-  return hits % 2 === 1;
+  return out;
 }
 
 let cache: Particle[] | null = null;
@@ -76,16 +99,12 @@ function getParticles(): Particle[] {
       });
     }
   }
-  // Цели: равномерная сетка внутри знака
+  // Цели: равномерная сетка внутри знака, в долях знака
   const b = ICON_BOUNDS;
-  const step = 1.55;
-  const targets: [number, number][] = [];
-  for (let y = b.y0 + step / 2; y < b.y1; y += step) {
-    for (let x = b.x0 + step / 2; x < b.x1; x += step) {
-      if (insideIcon(x, y))
-        targets.push([(x - b.x0) / (b.x1 - b.x0), (y - b.y0) / (b.y1 - b.y0)]);
-    }
-  }
+  const targets: [number, number][] = iconTargets(1.55).map(([x, y]) => [
+    (x - b.x0) / (b.x1 - b.x0),
+    (y - b.y0) / (b.y1 - b.y0),
+  ]);
   const byX = <T extends { 0: number; 1: number }>(a: T, c: T) =>
     a[0] - c[0] || a[1] - c[1];
   targets.sort(byX);
@@ -103,6 +122,9 @@ function getParticles(): Particle[] {
   return parts;
 }
 
+const WARM_STEPS = 12;
+const MIX_STEPS = 8;
+
 type Box = { left: number; top: number; w: number; h: number };
 
 const ParticleCanvas: React.FC<{
@@ -110,14 +132,19 @@ const ParticleCanvas: React.FC<{
   box: Box;
   theme: Theme;
   scan: { p1: number; p2: number; active: boolean };
-}> = ({ rect, box, theme, scan }) => {
+  scale?: number;
+}> = ({ rect, box, theme, scan, scale = 1 }) => {
   const frame = useCurrentFrame();
   const { width: W, height: H, durationInFrames } = useVideoConfig();
   const ref = useRef<HTMLCanvasElement>(null);
+  const cw0 = Math.max(1, Math.round(W * scale));
+  const ch0 = Math.max(1, Math.round(H * scale));
 
   useLayoutEffect(() => {
-    const ctx = ref.current?.getContext("2d");
-    if (!ctx) return;
+    const canvas = ref.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
     ctx.clearRect(0, 0, W, H);
     const parts = getParticles();
     const loop = (2 * Math.PI * frame) / durationInFrames;
@@ -128,6 +155,16 @@ const ParticleCanvas: React.FC<{
     // радиус точки цели: соседние точки почти касаются
     const unit = box.w / (ICON_BOUNDS.x1 - ICON_BOUNDS.x0);
     const rTarget = 0.6 * 1.55 * unit;
+
+    // Цвет точки зависит только от тёплости и степени сборки: считаем 12×8 цветов, а не строку на точку
+    const colors: string[] = [];
+    for (let wi = 0; wi < WARM_STEPS; wi++) {
+      const from = [0, 1, 2].map((i) => lerp(c0[i], c1[i], wi / (WARM_STEPS - 1)));
+      for (let mi = 0; mi < MIX_STEPS; mi++) {
+        const col = from.map((v, i) => Math.round(lerp(v, c2[i], mi / (MIX_STEPS - 1))));
+        colors.push(`rgb(${col[0]},${col[1]},${col[2]})`);
+      }
+    }
 
     for (const p of parts) {
       const hx = rect.left + p.hx * rect.width;
@@ -167,21 +204,22 @@ const ParticleCanvas: React.FC<{
       }
       alpha *= dotsOut;
       if (alpha <= 0.01 || x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
-      const warm = clamp01(p.w * 1.15);
-      const from = [0, 1, 2].map((i) => lerp(c0[i], c1[i], warm));
-      const col = from.map((v, i) => Math.round(lerp(v, c2[i], mix)));
-      ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+      const wi = Math.round(clamp01(p.w * 1.15) * (WARM_STEPS - 1));
+      const mi = Math.round(mix * (MIX_STEPS - 1));
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = colors[wi * MIX_STEPS + mi];
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }, [frame, W, H, rect, box, theme, scan, durationInFrames]);
 
   return (
     <canvas
       ref={ref}
-      width={W}
-      height={H}
+      width={cw0}
+      height={ch0}
       aria-hidden="true"
       style={{ position: "absolute", inset: 0, width: W, height: H }}
     />
@@ -189,7 +227,7 @@ const ParticleCanvas: React.FC<{
 };
 
 /** Фото рассыпается на точки, точки собираются в весы Clario, весы приходят в равновесие и держат заголовок. */
-const DotsToScales: React.FC<BannerProps> = ({ lang, themeId, px }) => {
+const DotsToScales: React.FC<BannerProps> = ({ lang, themeId, px, lite }) => {
   const rects = usePhotoRects({ zoomWide: 1.04, depth: 0.04 });
   const { frame, W, H, buildings } = rects;
   const theme = getTheme(themeId);
@@ -219,7 +257,7 @@ const DotsToScales: React.FC<BannerProps> = ({ lang, themeId, px }) => {
   const markH = iconH * ((bh + pad * 2) / bh);
 
   const whiteIn = 1 - ramp(frame, 0, 22, easeOut);
-  const whiteOut = ramp(frame, 338, FRAMES - 2);
+  const whiteOut = ramp(frame, WHITE_OUT_FROM, FRAMES - 2);
 
   return (
     <AbsoluteFill style={{ backgroundColor: theme.paper, overflow: "hidden" }}>
@@ -231,16 +269,24 @@ const DotsToScales: React.FC<BannerProps> = ({ lang, themeId, px }) => {
       <Photo
         rects={rects}
         theme={theme}
+        lite={lite}
         style={{ maskImage: mask, WebkitMaskImage: mask }}
       />
-      <Sweep rect={buildings} theme={theme} x={sw.x} power={sw.power} />
+      <Sweep rect={buildings} theme={theme} x={sw.x} power={sw.power} lite={lite} />
       <LightsCanvas
         rect={buildings}
         theme={theme}
+        scale={lite ? LITE_CANVAS_SCALE : 1}
         lights={{ ignition: 14, fade: [100, 140], sweep: sw, gain: 1.15 }}
       />
 
-      <ParticleCanvas rect={buildings} box={box} theme={theme} scan={scan} />
+      <ParticleCanvas
+        rect={buildings}
+        box={box}
+        theme={theme}
+        scan={scan}
+        scale={lite ? LITE_CANVAS_SCALE : 1}
+      />
 
       <div
         style={{
@@ -308,6 +354,6 @@ const DotsToScales: React.FC<BannerProps> = ({ lang, themeId, px }) => {
 export const dotsToScales: StyleDef = {
   id: "dots-to-scales",
   frames: FRAMES,
-  poster: 310,
+  poster: 400,
   Component: DotsToScales,
 };

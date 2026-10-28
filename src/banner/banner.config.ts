@@ -11,6 +11,9 @@ export const CTA_HREF = "#consultation";
 /** Размеры кнопки как на сайте, в CSS-пикселях. Композиция пересчитывает их под масштаб Player. */
 export const CTA_CSS = { height: 48, font: 17, padX: 32 } as const;
 
+/** Доля разрешения холстов (огни, точки, частицы) в лёгком режиме. */
+export const LITE_CANVAS_SCALE = 0.75;
+
 /** Переключатели возможностей. backdrop-filter дорог на слабых устройствах, поэтому выключаемый. */
 export const FLAGS = { backdropFilter: true } as const;
 

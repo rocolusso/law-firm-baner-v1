@@ -55,6 +55,55 @@ export function compositionSize(
   return { width: Math.max(2, Math.round((longSide * w) / h / 2) * 2), height: longSide };
 }
 
+/**
+ * Уровни качества. high: полный набор эффектов. low и min: меньше пикселей и без дорогих эффектов
+ * (слитое фото, без backdrop-filter, без blend и размытия на весь кадр). На слабых телефонах
+ * именно число пикселей слоёв и эффекты на весь кадр давали рывки и перезагрузку страницы.
+ */
+export type Tier = "high" | "low" | "min";
+export const TIERS: readonly Tier[] = ["high", "low", "min"];
+
+/** Сколько пикселей композиции допустимо на уровень. */
+export const PIXEL_BUDGET: Record<Tier, number> = {
+  high: 2_200_000,
+  low: 1_200_000,
+  min: 700_000,
+};
+/** Во сколько раз плотность композиции может превышать CSS-пиксели страницы. */
+const DPR_CAP: Record<Tier, number> = { high: 2, low: 1.5, min: 1.25 };
+
+export function parseTier(v: string | null | undefined): Tier | undefined {
+  return (TIERS as readonly string[]).includes(v ?? "") ? (v as Tier) : undefined;
+}
+
+export const isLite = (tier: Tier): boolean => tier !== "high";
+
+/** Следующий уровень вниз или null, если ниже некуда. */
+export function lowerTier(tier: Tier): Tier | null {
+  const i = TIERS.indexOf(tier);
+  return i >= 0 && i < TIERS.length - 1 ? TIERS[i + 1] : null;
+}
+
+/**
+ * Длинная сторона композиции для контейнера: не больше бюджета пикселей, не больше физических
+ * пикселей экрана (с запасом на DPR) и не больше 1920. Шаг 64, чтобы мелкие изменения размера
+ * не пересоздавали холсты.
+ */
+export function pickLongSide(
+  containerW: number,
+  containerH: number,
+  tier: Tier,
+  dpr = 1,
+): number {
+  const long = Math.max(1, containerW, containerH);
+  const short = Math.max(1, Math.min(containerW, containerH));
+  const aspect = short / long;
+  const byBudget = Math.sqrt(PIXEL_BUDGET[tier] / aspect);
+  const byDevice = long * Math.min(Math.max(dpr, 1), DPR_CAP[tier]);
+  const L = Math.min(1920, byBudget, byDevice);
+  return Math.max(640, Math.round(L / 64) * 64);
+}
+
 export type Orientation = "wide" | "tall";
 
 export type Layout = {
@@ -108,4 +157,15 @@ export function getLayout(W: number, H: number, px = 1, ctaCss = CTA_CSS): Layou
 /** Ширина кнопки: считается одинаково для видимой кнопки и невидимой ссылки поверх холста. */
 export function ctaWidth(label: string, cta: Layout["cta"]): number {
   return label.length * cta.font * 0.6 + cta.padX * 2;
+}
+
+/** Размеры невидимой ссылки поверх холста в процентах кадра. */
+export function ctaBoxPct(W: number, H: number, px: number, label: string) {
+  const lay = getLayout(W, H, px);
+  return {
+    left: (lay.anchor.x / W) * 100,
+    bottom: (lay.anchor.bottom / H) * 100,
+    width: (ctaWidth(label, lay.cta) / W) * 100,
+    height: (lay.cta.height / H) * 100,
+  };
 }

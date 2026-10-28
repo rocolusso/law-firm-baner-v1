@@ -202,14 +202,3 @@ export const Scrim: React.FC<{ theme: Theme; lay: Layout; opacity?: number }> = 
       : `radial-gradient(ellipse 72% 95% at 0% 100%, ${n}EE 0%, ${n}B8 40%, ${n}00 100%), linear-gradient(0deg, ${n}E6 0%, ${n}A6 20%, ${n}00 44%)`;
   return <div style={{ position: "absolute", inset: 0, background: bg, opacity }} />;
 };
-
-/** Размеры невидимой ссылки поверх холста в процентах кадра. */
-export function ctaBoxPct(W: number, H: number, px: number, label: string) {
-  const lay = getLayout(W, H, px);
-  return {
-    left: (lay.anchor.x / W) * 100,
-    bottom: (lay.anchor.bottom / H) * 100,
-    width: (ctaWidth(label, lay.cta) / W) * 100,
-    height: (lay.cta.height / H) * 100,
-  };
-}

@@ -13,7 +13,7 @@ describe("style registry", () => {
     for (const id of STYLE_IDS) {
       const s = getStyle(id);
       expect(s.frames).toBeGreaterThanOrEqual(FPS * 8);
-      expect(s.frames).toBeLessThanOrEqual(FPS * 14);
+      expect(s.frames).toBeLessThanOrEqual(FPS * 16);
       expect(s.poster).toBeGreaterThan(0);
       expect(s.poster).toBeLessThan(s.frames);
     }

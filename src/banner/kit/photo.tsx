@@ -1,14 +1,29 @@
-import { AbsoluteFill, Img, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import { image } from "../banner.config";
 import { coverRect, type Rect } from "../geometry";
 import type { Theme } from "../theme";
+import { CanvasImage } from "./CanvasImage";
 
 export const SRC = {
-  sky: "/banner/sky.jpg",
-  buildings: "/banner/buildings.png",
   mask: "/banner/mask-buildings.png",
-  poster: "/banner/city.jpg",
 } as const;
+
+/** Темы, для которых scripts/build-images.mjs собрал слитую сцену. */
+const BAKED_THEMES: readonly string[] = ["luxury", "mono"];
+
+/** Файл подходящей ширины: слой не должен быть крупнее, чем нужно рамке, иначе зря занимает память. */
+export function layerSrc(
+  kind: "sky" | "buildings" | "scene",
+  rectWidth: number,
+  themeId = "luxury",
+): string {
+  const big = kind === "buildings" ? 1600 : 2000;
+  const small = 1280;
+  const w = rectWidth <= small * 1.05 ? small : big;
+  return kind === "scene"
+    ? `/banner/scene-day-${themeId}-${w}.webp`
+    : `/banner/${kind}-${w}.webp`;
+}
 
 export const rectStyle = (r: Rect): React.CSSProperties => ({
   position: "absolute",
@@ -91,16 +106,31 @@ export const Photo: React.FC<{
   tone?: PhotoTone;
   style?: React.CSSProperties;
   showBuildings?: boolean;
-}> = ({ rects, theme, tone = "day", style, showBuildings = true }) => {
+  /** Один готовый кадр вместо трёх слоёв с фильтрами и blend. Параллакс неба и зданий пропадает. */
+  lite?: boolean;
+}> = ({ rects, theme, tone = "day", style, showBuildings = true, lite = false }) => {
   const f = filters[tone];
   const mask = `url(${SRC.mask})`;
+  if (lite && showBuildings && tone === "day" && BAKED_THEMES.includes(theme.id)) {
+    return (
+      <AbsoluteFill style={style}>
+        <CanvasImage
+          src={layerSrc("scene", rects.buildings.width, theme.id)}
+          style={rectStyle(rects.buildings)}
+        />
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill style={style}>
-      <Img src={SRC.sky} style={{ ...rectStyle(rects.sky), filter: f.sky }} />
+      <CanvasImage
+        src={layerSrc("sky", rects.sky.width)}
+        style={{ ...rectStyle(rects.sky), filter: f.sky }}
+      />
       {showBuildings && (
         <>
-          <Img
-            src={SRC.buildings}
+          <CanvasImage
+            src={layerSrc("buildings", rects.buildings.width)}
             style={{ ...rectStyle(rects.buildings), filter: f.buildings }}
           />
           <div

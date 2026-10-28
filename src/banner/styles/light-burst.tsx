@@ -1,5 +1,5 @@
 import { AbsoluteFill } from "remotion";
-import { image } from "../banner.config";
+import { image, LITE_CANVAS_SCALE } from "../banner.config";
 import { getLayout, toFrame } from "../geometry";
 import { getCopy } from "../i18n/copy";
 import { easeInOut, easeOut, loopSin, ramp, window4 } from "../kit/anim";
@@ -24,7 +24,7 @@ const SWEEP_A = [92, 150] as const;
 const SWEEP_B = [236, 296] as const;
 
 /** Свет из верхушки башни заливает кадр, окна загораются сверху вниз, потом фото на миг становится точками. */
-const LightBurst: React.FC<BannerProps> = ({ lang, themeId, px }) => {
+const LightBurst: React.FC<BannerProps> = ({ lang, themeId, px, lite }) => {
   const rects = usePhotoRects();
   const { frame, W, H, buildings } = rects;
   const theme = getTheme(themeId);
@@ -68,6 +68,7 @@ const LightBurst: React.FC<BannerProps> = ({ lang, themeId, px }) => {
       <Photo
         rects={rects}
         theme={theme}
+        lite={lite}
         style={{ maskImage: mask, WebkitMaskImage: mask }}
       />
 
@@ -75,16 +76,17 @@ const LightBurst: React.FC<BannerProps> = ({ lang, themeId, px }) => {
         style={{
           position: "absolute",
           inset: 0,
-          mixBlendMode: "screen",
+          mixBlendMode: lite ? undefined : "screen",
           opacity: bloomOpacity,
           background: `radial-gradient(circle ${bloomR}px at ${apex.x}px ${apex.y}px, ${withAlpha(theme.highlight, 1)} 0%, ${withAlpha(theme.goldLight, 0.85)} 16%, ${withAlpha(theme.gold, 0.45)} 40%, ${withAlpha(theme.gold, 0)} 72%)`,
         }}
       />
 
-      <Sweep rect={buildings} theme={theme} x={sw.x} power={sw.power} />
+      <Sweep rect={buildings} theme={theme} x={sw.x} power={sw.power} lite={lite} />
       <LightsCanvas
         rect={buildings}
         theme={theme}
+        scale={lite ? LITE_CANVAS_SCALE : 1}
         dots={active ? dots : null}
         lights={{
           ignition: 30,

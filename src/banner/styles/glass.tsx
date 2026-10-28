@@ -1,5 +1,5 @@
 import { AbsoluteFill } from "remotion";
-import { FLAGS, image } from "../banner.config";
+import { FLAGS, image, LITE_CANVAS_SCALE } from "../banner.config";
 import { getLayout, toFrame } from "../geometry";
 import { getCopy } from "../i18n/copy";
 import { easeInOut, easeOut, loopSin, ramp, smooth } from "../kit/anim";
@@ -17,14 +17,15 @@ const blur = (px: number, on: boolean) =>
   on ? `blur(${px}px) saturate(1.5)` : undefined;
 
 /** Матовое стекло в духе Apple: панели с размытием плывут над фото, на главной панели текст. */
-const Glass: React.FC<BannerProps> = ({ lang, themeId, px }) => {
+const Glass: React.FC<BannerProps> = ({ lang, themeId, px, lite }) => {
   const rects = usePhotoRects({ zoomWide: 1.08, depth: 0.05 });
   const { frame, W, H, buildings } = rects;
   const theme = getTheme(themeId);
   const copy = getCopy(lang);
   const lay = getLayout(W, H, px);
   const lines = lay.orientation === "tall" ? copy.lines.tall : copy.lines.wide;
-  const bd = FLAGS.backdropFilter;
+  // backdrop-filter заставляет браузер заново размывать всё, что под панелью, на каждом кадре
+  const bd = FLAGS.backdropFilter && !lite;
 
   const sw = sweepAt(frame, [70, 128], [168, 226], easeInOut);
   const apex = toFrame(buildings, image.apex);
@@ -44,22 +45,23 @@ const Glass: React.FC<BannerProps> = ({ lang, themeId, px }) => {
 
   return (
     <AbsoluteFill style={{ background: theme.soft, overflow: "hidden" }}>
-      <Photo rects={rects} theme={theme} />
+      <Photo rects={rects} theme={theme} lite={lite} />
 
       {/* Мягкое золото у верхушки */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          mixBlendMode: "screen",
+          mixBlendMode: lite ? undefined : "screen",
           opacity: 0.8,
           background: `radial-gradient(circle ${Math.hypot(W, H) * 0.34}px at ${apex.x}px ${apex.y}px, ${withAlpha(theme.highlight, 0.95)} 0%, ${withAlpha(theme.gold, 0.35)} 45%, ${withAlpha(theme.gold, 0)} 100%)`,
         }}
       />
-      <Sweep rect={buildings} theme={theme} x={sw.x} power={sw.power} />
+      <Sweep rect={buildings} theme={theme} x={sw.x} power={sw.power} lite={lite} />
       <LightsCanvas
         rect={buildings}
         theme={theme}
+        scale={lite ? LITE_CANVAS_SCALE : 1}
         lights={{ ignition: 24, sweep: sw, gain: 1.1 }}
       />
 
@@ -103,7 +105,7 @@ const Glass: React.FC<BannerProps> = ({ lang, themeId, px }) => {
           transformOrigin: "left bottom",
           backdropFilter: blur(26 * px, bd),
           WebkitBackdropFilter: blur(26 * px, bd),
-          background: `linear-gradient(135deg, ${withAlpha("#ffffff", 0.84)} 0%, ${withAlpha("#ffffff", 0.7)} 100%)`,
+          background: `linear-gradient(135deg, ${withAlpha("#ffffff", bd ? 0.84 : 0.92)} 0%, ${withAlpha("#ffffff", bd ? 0.7 : 0.8)} 100%)`,
           boxShadow: `0 ${30 * px}px ${80 * px}px ${withAlpha(theme.navyDeep, 0.35)}, inset 0 0 0 ${2 * px}px ${withAlpha("#ffffff", 0.9)}`,
           overflow: "hidden",
         }}

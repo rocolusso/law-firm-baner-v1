@@ -7,6 +7,8 @@ export type BannerProps = {
   themeId: ThemeId;
   /** Пикселей композиции на один CSS-пиксель страницы. */
   px: number;
+  /** Лёгкий режим: слитое фото, без blend, backdrop-filter и размытия на весь кадр, холсты меньше. */
+  lite: boolean;
 };
 
 export type StyleDef = {

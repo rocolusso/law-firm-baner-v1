@@ -15,22 +15,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="uk">
-      <head>
-        <link
-          rel="preload"
-          as="font"
-          type="font/woff2"
-          href="/fonts/inter-latin-wght-normal.woff2"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="preload"
-          as="font"
-          type="font/woff2"
-          href="/fonts/inter-cyrillic-wght-normal.woff2"
-          crossOrigin="anonymous"
-        />
-      </head>
+      {/* Шрифт не предзагружаем: он нужен только анимации и конкурировал бы с постером за канал.
+          CityBanner подгружает его сам перед стартом. */}
       <body>{children}</body>
     </html>
   );

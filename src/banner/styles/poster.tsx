@@ -1,4 +1,5 @@
 import { AbsoluteFill } from "remotion";
+import { LITE_CANVAS_SCALE } from "../banner.config";
 import { getLayout } from "../geometry";
 import { getCopy } from "../i18n/copy";
 import { easeInOut, easeOut, easeSnap, ramp } from "../kit/anim";
@@ -14,7 +15,7 @@ export const FRAMES = 270;
  * Плакат: золотой фон с растром, фото в наклонном окне, слова заголовка на цветных плашках,
  * которые по очереди выезжают слева. Смена плашек не чаще двух раз в секунду.
  */
-const Poster: React.FC<BannerProps> = ({ lang, themeId, px }) => {
+const Poster: React.FC<BannerProps> = ({ lang, themeId, px, lite }) => {
   const rects = usePhotoRects({ zoomWide: 1.1, zoomTall: 1.12, depth: 0.08 });
   const { frame, W, H, buildings } = rects;
   const theme = getTheme(themeId);
@@ -57,10 +58,11 @@ const Poster: React.FC<BannerProps> = ({ lang, themeId, px }) => {
 
       {/* Фото в окне */}
       <AbsoluteFill style={{ clipPath: clip }}>
-        <Photo rects={rects} theme={theme} />
+        <Photo rects={rects} theme={theme} lite={lite} />
         <LightsCanvas
           rect={buildings}
           theme={theme}
+          scale={lite ? LITE_CANVAS_SCALE : 1}
           lights={{ ignition: 20, fade: [250, 266], gain: 1.2 }}
         />
       </AbsoluteFill>

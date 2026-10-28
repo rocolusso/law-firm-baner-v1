@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { compositionSize, coverRect, ctaWidth, getLayout, toFrame } from "./geometry";
+import {
+  PIXEL_BUDGET,
+  TIERS,
+  compositionSize,
+  coverRect,
+  ctaBoxPct,
+  ctaWidth,
+  getLayout,
+  lowerTier,
+  pickLongSide,
+  toFrame,
+} from "./geometry";
 
 describe("coverRect", () => {
   const focal = { x: 0.5, y: 0.5 };
@@ -84,5 +95,63 @@ describe("getLayout", () => {
     const w = ctaWidth("Отримати консультацію", l.cta);
     expect(w).toBeGreaterThan(l.cta.padX * 2);
     expect(w).toBeLessThan(1920 * 0.5);
+  });
+});
+
+describe("pickLongSide", () => {
+  it("never exceeds the pixel budget of the tier", () => {
+    for (const tier of TIERS) {
+      for (const [w, h, dpr] of [
+        [1280, 800, 1],
+        [1280, 800, 3],
+        [449, 642, 3],
+        [390, 844, 3],
+        [1920, 1080, 2],
+      ] as const) {
+        const L = pickLongSide(w, h, tier, dpr);
+        const { width, height } = compositionSize(w, h, L);
+        expect(width * height).toBeLessThanOrEqual(PIXEL_BUDGET[tier] * 1.08);
+        expect(L).toBeLessThanOrEqual(1920);
+        expect(L % 64).toBe(0);
+      }
+    }
+  });
+
+  it("gets smaller on every lower tier on a phone", () => {
+    const high = pickLongSide(449, 642, "high", 3);
+    const low = pickLongSide(449, 642, "low", 3);
+    const min = pickLongSide(449, 642, "min", 3);
+    expect(high).toBeGreaterThan(low);
+    expect(low).toBeGreaterThan(min);
+  });
+
+  it("keeps one CSS pixel per composition pixel on a 1x desktop", () => {
+    const L = pickLongSide(1280, 800, "high", 1);
+    expect(L).toBe(1280);
+  });
+
+  it("ignores small container jitter (url bar) at the same tier", () => {
+    expect(pickLongSide(449, 642, "low", 3)).toBe(pickLongSide(449, 620, "low", 3));
+  });
+
+  it("lowerTier walks high, low, min and stops", () => {
+    expect(lowerTier("high")).toBe("low");
+    expect(lowerTier("low")).toBe("min");
+    expect(lowerTier("min")).toBeNull();
+  });
+});
+
+describe("ctaBoxPct", () => {
+  it("keeps the CTA link inside the frame", () => {
+    for (const [W, H, px] of [
+      [1280, 800, 1],
+      [960, 1371, 2.1],
+    ] as const) {
+      const b = ctaBoxPct(W, H, px, "Отримати консультацію");
+      expect(b.left).toBeGreaterThanOrEqual(0);
+      expect(b.left + b.width).toBeLessThanOrEqual(100);
+      expect(b.bottom).toBeGreaterThanOrEqual(0);
+      expect(b.bottom + b.height).toBeLessThanOrEqual(100);
+    }
   });
 });

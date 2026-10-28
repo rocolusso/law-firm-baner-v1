@@ -70,15 +70,20 @@ export const LightsCanvas: React.FC<{
   theme: Theme;
   dots?: DotsOptions | null;
   lights?: LightsOptions | null;
-}> = ({ rect, theme, dots, lights }) => {
+  /** Доля разрешения холста от размера композиции. Меньше 1 на слабых телефонах: холст растягивается CSS. */
+  scale?: number;
+}> = ({ rect, theme, dots, lights, scale = 1 }) => {
   const frame = useCurrentFrame();
   const { width: W, height: H, durationInFrames } = useVideoConfig();
   const ref = useRef<HTMLCanvasElement>(null);
+  const cw0 = Math.max(1, Math.round(W * scale));
+  const ch0 = Math.max(1, Math.round(H * scale));
 
   useLayoutEffect(() => {
     const canvas = ref.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
     const { warm, cool } = getSprites(theme);
     const loop = (2 * Math.PI * frame) / durationInFrames;
 
@@ -181,8 +186,8 @@ export const LightsCanvas: React.FC<{
   return (
     <canvas
       ref={ref}
-      width={W}
-      height={H}
+      width={cw0}
+      height={ch0}
       aria-hidden="true"
       style={{
         position: "absolute",

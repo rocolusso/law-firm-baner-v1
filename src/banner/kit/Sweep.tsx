@@ -8,7 +8,9 @@ export const Sweep: React.FC<{
   theme: Theme;
   x: number;
   power: number;
-}> = ({ rect, theme, x, power }) => {
+  /** Без mix-blend-mode: на тёмных зданиях результат почти тот же, а слою не нужен отдельный проход. */
+  lite?: boolean;
+}> = ({ rect, theme, x, power, lite = false }) => {
   if (power <= 0.01) return null;
   const P = x * 100;
   const mask = `url(${SRC.mask})`;
@@ -20,7 +22,7 @@ export const Sweep: React.FC<{
         WebkitMaskImage: mask,
         maskSize: "100% 100%",
         WebkitMaskSize: "100% 100%",
-        mixBlendMode: "screen",
+        mixBlendMode: lite ? undefined : "screen",
         opacity: power * 0.9,
       }}
     >
